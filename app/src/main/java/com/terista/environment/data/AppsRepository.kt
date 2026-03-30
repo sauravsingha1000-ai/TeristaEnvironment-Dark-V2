@@ -394,8 +394,18 @@ class AppsRepository {
             val installResult = when {
 
     source.startsWith("content://") -> {
-        val uri = Uri.parse(source)
-        blackBoxCore.installPackageAsUser(uri, userId)
+    val uri = Uri.parse(source)
+
+    val inputStream = BlackBoxCore.getContext().contentResolver.openInputStream(uri)
+    val tempFile = File(BlackBoxCore.getContext().cacheDir, "temp_install.apk")
+
+    inputStream?.use { input ->
+        tempFile.outputStream().use { output ->
+            input.copyTo(output)
+        }
+    }
+
+    blackBoxCore.installPackageAsUser(tempFile, userId)
     }
 
     source.startsWith("file://") -> {
