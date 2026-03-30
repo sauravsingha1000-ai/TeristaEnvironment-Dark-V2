@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <PreferenceCategory android:title="@string/other">
+
+        <Preference
+            android:key="gms_manager"
+            android:title="@string/gms_manager"
+            android:summary="@string/jump_gms" />
+
+        <SwitchPreferenceCompat
+            android:key="root_hide"
+            android:title="@string/hide_root" />
+
+        <SwitchPreferenceCompat
+            android:key="daemon_enable"
+            android:title="@string/daemon_enable" />
+
+        <SwitchPreferenceCompat
+            android:key="use_vpn_network"
+            android:title="@string/use_vpn_network"
+            android:summary="@string/use_vpn_network_summary" />
+
+        <SwitchPreferenceCompat
+            android:key="disable_flag_secure"
+            android:title="@string/disable_flag_secure"
+            android:summary="@string/disable_flag_secure_summary" />
+
+        <Preference
+            android:key="send_logs"
+            android:title="Send Logs"
+            android:summary="Upload debug logs to developer" />
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

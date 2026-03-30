@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Legacy aliases (keep for safety) -->
+    <color name="primary">#6B5CE7</color>
+    <color name="primary_dark">#0A0A12</color>
+    <color name="primary_light">#7C6DF2</color>
+    <color name="accent">#6B5CE7</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Dark theme core -->
+    <color name="bg_main">#0A0A12</color>
+    <color name="bg_card">#14141F</color>
+    <color name="bg_card_inner">#1C1C2E</color>
+    <color name="bg_button_icon">#1E1E30</color>
+    <color name="bg_nav">#0E0E1A</color>
+
+    <!-- Text -->
+    <color name="primary_text">#FFFFFF</color>
+    <color name="secondary_text">#8E8FA8</color>
+    <color name="section_label">#565680</color>
+    <color name="text_disabled">#404060</color>
+
+    <!-- Accent colors -->
+    <color name="accent_purple">#6B5CE7</color>
+    <color name="accent_purple_light">#8B7EF8</color>
+    <color name="accent_green">#00D68F</color>
+    <color name="accent_orange">#FF8C42</color>
+    <color name="accent_red">#FF4757</color>
+    <color name="accent_teal">#00BCD4</color>
+
+    <!-- Toggle colors -->
+    <color name="toggle_track_on">#3D5AFE</color>
+    <color name="toggle_track_off">#2A2A40</color>
+
+    <!-- Divider -->
+    <color name="divider">#1F1F35</color>
+
+    <!-- Nav item selected -->
+    <color name="nav_selected">#6B5CE7</color>
+    <color name="nav_unselected">#555580</color>
+</resources>
