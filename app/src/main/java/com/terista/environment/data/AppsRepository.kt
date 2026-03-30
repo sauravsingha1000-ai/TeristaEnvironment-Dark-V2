@@ -59,104 +59,87 @@ class AppsRepository {
     // 🔥 FIXED INSTALL METHOD
     // ===========================
     fun installApk(source: String, userId: Int, resultLiveData: MutableLiveData<String>) {
-        try {
-            val blackBoxCore = BlackBoxCore.get()
+    try {
+        val blackBoxCore = BlackBoxCore.get()
 
-            Log.d(TAG, "Installing source: $source")
+        val installResult = when {
 
-            val installResult = when {
+            source.startsWith("content://") -> {
+                val uri = Uri.parse(source)
 
-                // ✅ FIX 1: HANDLE content:// PROPERLY
-                source.startsWith("content://") -> {
-                    val uri = Uri.parse(source)
+                val inputStream = BlackBoxCore.getContext()
+                    .contentResolver.openInputStream(uri)
 
-                    val inputStream = BlackBoxCore.getContext()
-                        .contentResolver.openInputStream(uri)
+                val tempFile = File(
+                    BlackBoxCore.getContext().cacheDir,
+                    "temp_install.apk"
+                )
 
-                    val tempFile = File(
-                        BlackBoxCore.getContext().cacheDir,
-                        "temp_install.apk"
-                    )
-
-                    inputStream?.use { input ->
-                        tempFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
+                inputStream?.use { input ->
+                    tempFile.outputStream().use { output ->
+                        input.copyTo(output)
                     }
-
-                    Log.d(TAG, "Converted content URI → file: ${tempFile.absolutePath}")
-                    blackBoxCore.installPackageAsUser(tempFile, userId)
                 }
 
-                // file://
-                source.startsWith("file://") -> {
-                    val file = File(Uri.parse(source).path!!)
-                    blackBoxCore.installPackageAsUser(file, userId)
-                }
-
-                // direct file path
-                File(source).exists() -> {
-                    val file = File(source)
-                    blackBoxCore.installPackageAsUser(file, userId)
-                }
-
-                // package name
-                else -> {
-                    blackBoxCore.installPackageAsUser(source, userId)
-                }
+                blackBoxCore.installPackageAsUser(tempFile, userId)
             }
 
-            if (installResult.success) {
-                Log.d(TAG, "Install success: ${installResult.packageName}")
-
-                updateAppSortList(userId, installResult.packageName, true)
-                resultLiveData.postValue(getString(R.string.install_success))
-
-                // ✅ FIX 2: DELAY scanUser (IMPORTANT)
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    try {
-                        scanUser()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "scanUser delayed error: ${e.message}")
-                    }
-                }, 800) // increased delay
-
-            } else {
-                Log.e(TAG, "Install failed: ${installResult.msg}")
-                resultLiveData.postValue(getString(R.string.install_fail, installResult.msg))
+            source.startsWith("file://") -> {
+                val file = File(Uri.parse(source).path!!)
+                blackBoxCore.installPackageAsUser(file, userId)
             }
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Error installing APK: ${e.message}")
-            resultLiveData.postValue("Installation failed: ${e.message}")
+            File(source).exists() -> {
+                val file = File(source)
+                blackBoxCore.installPackageAsUser(file, userId)
+            }
+
+            else -> {
+                blackBoxCore.installPackageAsUser(source, userId)
+            }
         }
+
+        if (installResult.success) {
+            updateAppSortList(userId, installResult.packageName, true)
+            resultLiveData.postValue(getString(R.string.install_success))
+
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                scanUser()
+            }, 800)
+
+        } else {
+            resultLiveData.postValue(getString(R.string.install_fail, installResult.msg))
+        }
+
+    } catch (e: Exception) {
+        Log.e(TAG, "Error installing APK: ${e.message}")
+        resultLiveData.postValue("Installation failed: ${e.message}")
+    }
     }
 
     // ===========================
     // 🔥 FIXED scanUser (SAFE)
     // ===========================
     private fun scanUser() {
-        try {
-            val blackBoxCore = BlackBoxCore.get()
-            val userList = blackBoxCore.users
+    try {
+        val blackBoxCore = BlackBoxCore.get()
+        val userList = blackBoxCore.users
 
-            if (userList.isEmpty()) return
+        if (userList.isEmpty()) return
 
-            val id = userList.last().id
+        val id = userList.last().id
+        val apps = blackBoxCore.getInstalledApplications(0, id)
 
-            val apps = blackBoxCore.getInstalledApplications(0, id)
-
-            // ✅ DO NOT DELETE USER IMMEDIATELY
-            if (apps.isEmpty()) {
-                Log.w(TAG, "scanUser: empty but skipping delete (race condition protection)")
-                return
-            }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in scanUser: ${e.message}")
+        // 🚫 DO NOT DELETE USER HERE
+        if (apps.isEmpty()) {
+            Log.w(TAG, "scanUser skipped delete (prevent bug)")
+            return
         }
-    }
 
+    } catch (e: Exception) {
+        Log.e(TAG, "Error in scanUser: ${e.message}")
+    }
+    }
     // ===========================
     // KEEP EVERYTHING SAME BELOW
     // ===========================
