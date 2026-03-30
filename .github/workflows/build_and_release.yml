@@ -1,0 +1,123 @@
+name: Build Terista Environment APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK 29
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "ndk;29.0.13846066" \
+            "cmake;3.22.1" || true
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.13846066" >> $GITHUB_ENV
+
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      # ✅ FIX: ADD THIS STEP (debug keystore)
+      - name: Generate debug keystore
+        run: |
+          mkdir -p ~/.android
+          keytool -genkey -v \
+            -keystore ~/.android/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build Release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: List built APKs
+        run: find ./app/build/outputs/apk -name "*.apk" -exec ls -lh {} \;
+
+      - name: Find APK paths
+        id: apk_paths
+        run: |
+          DEBUG_APK=$(find ./app/build/outputs/apk/debug -name "*.apk" | sort | head -n 1)
+          RELEASE_APK=$(find ./app/build/outputs/apk/release -name "*.apk" | sort | head -n 1)
+          echo "debug_apk=$DEBUG_APK" >> $GITHUB_OUTPUT
+          echo "release_apk=$RELEASE_APK" >> $GITHUB_OUTPUT
+          echo "Found Debug: $DEBUG_APK"
+          echo "Found Release: $RELEASE_APK"
+
+      - name: Upload Debug APK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TeristaEnvironment-Debug
+          path: ${{ steps.apk_paths.outputs.debug_apk }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload Release APK as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TeristaEnvironment-Release
+          path: ${{ steps.apk_paths.outputs.release_apk }}
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Create GitHub Release (manual trigger only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Terista Environment v1.0.${{ github.run_number }}"
+          body: |
+            ## Terista Environment Build
+
+            Built from commit: ${{ github.sha }}
+
+            ### Downloads
+            - Debug APK: for testing/sideloading
+            - Release APK: optimized, signed with debug key
+          files: |
+            ${{ steps.apk_paths.outputs.debug_apk }}
+            ${{ steps.apk_paths.outputs.release_apk }}
+          draft: false
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
