@@ -391,21 +391,46 @@ class AppsRepository {
             }
 
             val blackBoxCore = BlackBoxCore.get()
-            val installResult =
-                    if (URLUtil.isValidUrl(source)) {
-                        val uri = Uri.parse(source)
-                        blackBoxCore.installPackageAsUser(uri, userId)
-                    } else {
-                        blackBoxCore.installPackageAsUser(source, userId)
-                    }
+            val installResult = when {
+
+    source.startsWith("content://") -> {
+        val uri = Uri.parse(source)
+        blackBoxCore.installPackageAsUser(uri, userId)
+    }
+
+    source.startsWith("file://") -> {
+        val file = File(Uri.parse(source).path!!)
+        blackBoxCore.installPackageAsUser(file, userId)
+    }
+
+    File(source).exists() -> {
+        val file = File(source)
+        blackBoxCore.installPackageAsUser(file, userId)
+    }
+
+    else -> {
+        blackBoxCore.installPackageAsUser(source, userId)
+    }
+}
 
             if (installResult.success) {
-                updateAppSortList(userId, installResult.packageName, true)
-                resultLiveData.postValue(getString(R.string.install_success))
-            } else {
-                resultLiveData.postValue(getString(R.string.install_fail, installResult.msg))
-            }
+
+    updateAppSortList(userId, installResult.packageName, true)
+
+    resultLiveData.postValue(getString(R.string.install_success))
+
+    // 🔥 delay scanUser (ONLY HERE)
+    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+        try {
             scanUser()
+        } catch (e: Exception) {
+            Log.e(TAG, "scanUser delayed error: ${e.message}")
+        }
+    }, 500)
+
+} else {
+    resultLiveData.postValue(getString(R.string.install_fail, installResult.msg))
+}
         } catch (e: Exception) {
             Log.e(TAG, "Error installing APK: ${e.message}")
             resultLiveData.postValue("Installation failed: ${e.message}")
