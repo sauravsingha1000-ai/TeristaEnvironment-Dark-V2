@@ -15,195 +15,243 @@ import com.terista.environment.bean.InstalledAppBean
 import com.terista.environment.util.MemoryManager
 import com.terista.environment.util.getString
 
-
 class AppsRepository {
+
     val TAG: String = "AppsRepository"
     private var mInstalledList = mutableListOf<AppInfo>()
 
+    // ---------------- SAFE LABEL ----------------
     private fun safeLoadAppLabel(applicationInfo: ApplicationInfo): String {
         return try {
             BlackBoxCore.getPackageManager().getApplicationLabel(applicationInfo).toString()
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to load label for ${applicationInfo.packageName}: ${e.message}")
+            Log.w(TAG, "Failed label: ${applicationInfo.packageName}")
             applicationInfo.packageName
         }
     }
 
-    private fun safeLoadAppIcon(applicationInfo: ApplicationInfo): android.graphics.drawable.Drawable? {
+    // ---------------- SAFE ICON ----------------
+    private fun safeLoadAppIcon(applicationInfo: ApplicationInfo)
+            : android.graphics.drawable.Drawable? {
         return try {
-            if (MemoryManager.shouldSkipIconLoading()) {
-                Log.w(TAG, "Memory high, skipping icon for ${applicationInfo.packageName}")
-                return null
-            }
-
-            val icon = BlackBoxCore.getPackageManager().getApplicationIcon(applicationInfo)
-
-            if (icon is android.graphics.drawable.BitmapDrawable) {
-                val bitmap = icon.bitmap
-                if (bitmap.width > 96 || bitmap.height > 96) {
-                    val scaled = android.graphics.Bitmap.createScaledBitmap(bitmap, 96, 96, true)
-                    android.graphics.drawable.BitmapDrawable(
-                        BlackBoxCore.getPackageManager()
-                            .getResourcesForApplication(applicationInfo.packageName),
-                        scaled
-                    )
-                } else icon
-            } else icon
+            if (MemoryManager.shouldSkipIconLoading()) return null
+            BlackBoxCore.getPackageManager().getApplicationIcon(applicationInfo)
         } catch (e: Exception) {
-            Log.w(TAG, "Icon load failed: ${e.message}")
+            Log.w(TAG, "Failed icon: ${applicationInfo.packageName}")
             null
         }
     }
 
-    // ===========================
-    // 🔥 FIXED INSTALL METHOD
-    // ===========================
-    fun installApk(source: String, userId: Int, resultLiveData: MutableLiveData<String>) {
-    try {
-        val blackBoxCore = BlackBoxCore.get()
+    // =========================================================
+    // ✅ REQUIRED FUNCTION (FIXED)
+    // =========================================================
+    fun previewInstallList() {
+        try {
+            synchronized(mInstalledList) {
+                val installedApplications =
+                    BlackBoxCore.getPackageManager().getInstalledApplications(0)
 
-        val installResult = when {
+                val installedList = mutableListOf<AppInfo>()
 
-            source.startsWith("content://") -> {
-                val uri = Uri.parse(source)
+                for (app in installedApplications) {
+                    try {
+                        val file = File(app.sourceDir)
 
-                val inputStream = BlackBoxCore.getContext()
-                    .contentResolver.openInputStream(uri)
+                        if ((app.flags and ApplicationInfo.FLAG_SYSTEM) != 0) continue
+                        if (!AbiUtils.isSupport(file)) continue
+                        if (BlackBoxCore.get().isBlackBoxApp(app.packageName)) continue
 
-                val tempFile = File(
-                    BlackBoxCore.getContext().cacheDir,
-                    "temp_install.apk"
-                )
+                        val info = AppInfo(
+                            safeLoadAppLabel(app),
+                            safeLoadAppIcon(app),
+                            app.packageName,
+                            app.sourceDir,
+                            false
+                        )
+                        installedList.add(info)
 
-                inputStream?.use { input ->
-                    tempFile.outputStream().use { output ->
-                        input.copyTo(output)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "preview error: ${e.message}")
                     }
                 }
 
-                blackBoxCore.installPackageAsUser(tempFile, userId)
+                mInstalledList.clear()
+                mInstalledList.addAll(installedList)
             }
-
-            source.startsWith("file://") -> {
-                val file = File(Uri.parse(source).path!!)
-                blackBoxCore.installPackageAsUser(file, userId)
-            }
-
-            File(source).exists() -> {
-                val file = File(source)
-                blackBoxCore.installPackageAsUser(file, userId)
-            }
-
-            else -> {
-                blackBoxCore.installPackageAsUser(source, userId)
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "previewInstallList crash: ${e.message}")
         }
+    }
 
-        if (installResult.success) {
-            updateAppSortList(userId, installResult.packageName, true)
-            resultLiveData.postValue(getString(R.string.install_success))
+    // =========================================================
+    // ✅ REQUIRED FUNCTION (FIXED)
+    // =========================================================
+    fun getInstalledAppList(
+        userID: Int,
+        loadingLiveData: MutableLiveData<Boolean>,
+        appsLiveData: MutableLiveData<List<InstalledAppBean>>
+    ) {
+        try {
+            loadingLiveData.postValue(true)
 
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                scanUser()
-            }, 800)
+            synchronized(mInstalledList) {
+                val core = BlackBoxCore.get()
 
-        } else {
-            resultLiveData.postValue(getString(R.string.install_fail, installResult.msg))
+                val list = mInstalledList.map {
+                    InstalledAppBean(
+                        it.name,
+                        it.icon,
+                        it.packageName,
+                        it.sourceDir,
+                        core.isInstalled(it.packageName, userID)
+                    )
+                }
+
+                appsLiveData.postValue(list)
+                loadingLiveData.postValue(false)
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "getInstalledAppList error: ${e.message}")
+            loadingLiveData.postValue(false)
+            appsLiveData.postValue(emptyList())
         }
-
-    } catch (e: Exception) {
-        Log.e(TAG, "Error installing APK: ${e.message}")
-        resultLiveData.postValue("Installation failed: ${e.message}")
-    }
     }
 
-    // ===========================
-    // 🔥 FIXED scanUser (SAFE)
-    // ===========================
-    private fun scanUser() {
-    try {
-        val blackBoxCore = BlackBoxCore.get()
-        val userList = blackBoxCore.users
+    // =========================================================
+    // ✅ REQUIRED FUNCTION (FIXED)
+    // =========================================================
+    fun getVmInstallList(
+        userId: Int,
+        appsLiveData: MutableLiveData<List<AppInfo>>
+    ) {
+        try {
+            val core = BlackBoxCore.get()
 
-        if (userList.isEmpty()) return
+            val applicationList = core.getInstalledApplications(0, userId)
 
-        val id = userList.last().id
-        val apps = blackBoxCore.getInstalledApplications(0, id)
+            val result = mutableListOf<AppInfo>()
 
-        // 🚫 DO NOT DELETE USER HERE
-        if (apps.isEmpty()) {
-            Log.w(TAG, "scanUser skipped delete (prevent bug)")
-            return
+            applicationList.forEach {
+                try {
+                    val info = AppInfo(
+                        safeLoadAppLabel(it),
+                        safeLoadAppIcon(it),
+                        it.packageName,
+                        it.sourceDir ?: "",
+                        false
+                    )
+                    result.add(info)
+                } catch (e: Exception) {
+                    Log.e(TAG, "vm list error: ${e.message}")
+                }
+            }
+
+            appsLiveData.postValue(result)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "getVmInstallList crash: ${e.message}")
+            appsLiveData.postValue(emptyList())
         }
-
-    } catch (e: Exception) {
-        Log.e(TAG, "Error in scanUser: ${e.message}")
     }
-    }
-    // ===========================
-    // KEEP EVERYTHING SAME BELOW
-    // ===========================
 
-    fun unInstall(packageName: String, userID: Int, resultLiveData: MutableLiveData<String>) {
+    // =========================================================
+    // INSTALL
+    // =========================================================
+    fun installApk(
+        source: String,
+        userId: Int,
+        resultLiveData: MutableLiveData<String>
+    ) {
+        try {
+            val core = BlackBoxCore.get()
+
+            val result = if (URLUtil.isValidUrl(source)) {
+                core.installPackageAsUser(Uri.parse(source), userId)
+            } else {
+                core.installPackageAsUser(source, userId)
+            }
+
+            if (result.success) {
+                resultLiveData.postValue(getString(R.string.install_success))
+
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    scanUser()
+                }, 500)
+
+            } else {
+                resultLiveData.postValue(
+                    getString(R.string.install_fail, result.msg)
+                )
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "install error: ${e.message}")
+            resultLiveData.postValue("Install failed: ${e.message}")
+        }
+    }
+
+    fun unInstall(
+        packageName: String,
+        userID: Int,
+        resultLiveData: MutableLiveData<String>
+    ) {
         try {
             BlackBoxCore.get().uninstallPackageAsUser(packageName, userID)
-            updateAppSortList(userID, packageName, false)
             scanUser()
             resultLiveData.postValue(getString(R.string.uninstall_success))
         } catch (e: Exception) {
-            Log.e(TAG, "Error uninstalling APK: ${e.message}")
-            resultLiveData.postValue("Uninstallation failed: ${e.message}")
+            Log.e(TAG, "uninstall error: ${e.message}")
         }
     }
 
-    fun launchApk(packageName: String, userId: Int, launchLiveData: MutableLiveData<Boolean>) {
+    fun launchApk(
+        packageName: String,
+        userId: Int,
+        launchLiveData: MutableLiveData<Boolean>
+    ) {
         try {
-            val result = BlackBoxCore.get().launchApk(packageName, userId)
-            launchLiveData.postValue(result)
+            launchLiveData.postValue(
+                BlackBoxCore.get().launchApk(packageName, userId)
+            )
         } catch (e: Exception) {
-            Log.e(TAG, "Error launching APK: ${e.message}")
             launchLiveData.postValue(false)
         }
     }
 
-    fun clearApkData(packageName: String, userID: Int, resultLiveData: MutableLiveData<String>) {
+    fun clearApkData(
+        packageName: String,
+        userID: Int,
+        resultLiveData: MutableLiveData<String>
+    ) {
         try {
             BlackBoxCore.get().clearPackage(packageName, userID)
             resultLiveData.postValue(getString(R.string.clear_success))
         } catch (e: Exception) {
-            Log.e(TAG, "Error clearing APK data: ${e.message}")
-            resultLiveData.postValue("Clear failed: ${e.message}")
+            Log.e(TAG, "clear error: ${e.message}")
         }
     }
 
-    private fun updateAppSortList(userID: Int, pkg: String, isAdd: Boolean) {
+    // =========================================================
+    // SAFE USER SCAN
+    // =========================================================
+    private fun scanUser() {
         try {
-            val savedSortList = AppManager.mRemarkSharedPreferences.getString("AppList$userID", "")
-            val sortList = linkedSetOf<String>()
+            val core = BlackBoxCore.get()
+            val users = core.users
+            if (users.isEmpty()) return
 
-            if (savedSortList != null) {
-                sortList.addAll(savedSortList.split(","))
+            val id = users.last().id
+
+            val apps = core.getInstalledApplications(0, id)
+
+            if (apps.isEmpty()) {
+                Log.w(TAG, "Skip delete user (safe)")
+                return
             }
 
-            if (isAdd) sortList.add(pkg) else sortList.remove(pkg)
-
-            AppManager.mRemarkSharedPreferences.edit().apply {
-                putString("AppList$userID", sortList.joinToString(","))
-                apply()
-            }
         } catch (e: Exception) {
-            Log.e(TAG, "Error updating app sort list: ${e.message}")
-        }
-    }
-
-    fun updateApkOrder(userID: Int, dataList: List<AppInfo>) {
-        try {
-            AppManager.mRemarkSharedPreferences.edit().apply {
-                putString("AppList$userID", dataList.joinToString(",") { it.packageName })
-                apply()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating APK order: ${e.message}")
+            Log.e(TAG, "scanUser error: ${e.message}")
         }
     }
 }
